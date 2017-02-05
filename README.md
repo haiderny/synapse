@@ -28,8 +28,10 @@ Synapse solves these difficulties in a simple and fault-tolerant way.
 
 ## How Synapse Works ##
 
-Synapse runs on your application servers; here at Airbnb, we just run it on every box we deploy.
-The heart of synapse is actually [HAProxy](http://haproxy.1wt.eu/), a stable and proven routing component.
+Synapse typically runs on your application servers, often every machine. At the heart of Synapse
+are proven routing components like [HAProxy](http://haproxy.1wt.eu/) or [NGINX](http://nginx.org/),
+so you know that you won't drop a packet.
+
 For every external service that your application talks to, we assign a synapse local port on localhost.
 Synapse creates a proxy from the local port to the service, and you reconfigure your application to talk to the proxy.
 
@@ -37,6 +39,10 @@ Synapse comes with a number of `watchers`, which are responsible for service dis
 The synapse watchers take care of re-configuring the proxy so that it always points at available servers.
 We've included a number of default watchers, including ones that query zookeeper and ones using the AWS API.
 It is easy to write your own watchers for your use case, and we encourage submitting them back to the project.
+
+Synapse also with a number of `config_generators`, which are responsible for reacting to service discovery
+changes and writing out appropriate config. Right now HAProxy, Nginx, and local files are built in, but you
+can plug your own in [easily](#createconfig).
 
 ## Example Migration ##
 
@@ -138,13 +144,18 @@ Each value in the services hash is also a hash, and must contain the following k
 
 * [`discovery`](#discovery): how synapse will discover hosts providing this service (see [below](#discovery))
 
-The services hash *should* contain a section on how to configure the routing
-component you wish to use for this particular service. The only choice currently
-is `haproxy`:
+The services hash *should* contain a section on how to configure each routing
+component you wish to use for this particular service. The current choices are
+`haproxy` or `nginx`. Note that if you give a routing component at the top level
+but not at the service level the default is typically to make that service
+available via that routing component, sans listening ports, if you wish to only
+configure a single component explicitly pass the ``disabled`` option to the
+relevant routing component.
 
 * [`haproxy`](#haproxysvc): how will the haproxy section for this service be configured
+* [`nginx`](#nginxsvc): how will the nginx section for this service be configured
 
-The services hash may contain the following keys:
+The services hash may contain the following additional keys:
 
 * `default_servers` (default: `[]`): the list of default servers providing this service; synapse uses these if no others can be discovered. See [Listing Default Servers](#defaultservers).
 * `keep_default_servers` (default: false): whether default servers should be added to discovered services
@@ -278,8 +289,17 @@ This section is its own hash, which should contain the following keys:
 * `disabled`: A boolean value indicating if haproxy configuration management
 for just this service instance ought be disabled. For example, if you want
 file output for a particular service but no HAProxy config. (default is ``False``)
-* `port`: the port (on localhost) where HAProxy will listen for connections to the service. If this is omitted, only a backend stanza (and no frontend stanza) will be generated for this service; you'll need to get traffic to your service yourself via the `shared_frontend` or manual frontends in `extra_sections`
-* `bind_address`: force HAProxy to listen on this address ( default is localhost ). Setting `bind_address` on a per service basis overrides the global `bind_address` in the top level `haproxy`. Having HAProxy listen for connections on different addresses ( example: service1 listen on 127.0.0.2:443 and service2 listen on 127.0.0.3:443) allows /etc/hosts entries to point to services.
+* `port`: the port (on localhost) where HAProxy will listen for connections to
+the service. If this is null, just the bind_address will be used (e.g. for
+unix sockets) and if omitted, only a backend stanza (and no frontend stanza)
+will be generated for this service. In the case of a bare backend, you'll need
+to get traffic to your service yourself via the `shared_frontend` or
+manual frontends in `extra_sections`
+* `bind_address`: force HAProxy to listen on this address (default is localhost).
+Setting `bind_address` on a per service basis overrides the global `bind_address`
+in the top level `haproxy`. Having HAProxy listen for connections on
+different addresses (example: service1 listen on 127.0.0.2:443 and service2
+listen on 127.0.0.3:443) allows /etc/hosts entries to point to services.
 * `bind_options`: optional: default value is an empty string, specify additional bind parameters, such as ssl accept-proxy, crt, ciphers etc.
 * `server_port_override`: **DEPRECATED**. Renamed [`backend_port_override`](#backend_port_override) and moved to the top level hash. This will be removed in future versions.
 * `server_options`: the haproxy options for each `server` line of the service in HAProxy config; it may be left out.
@@ -291,6 +311,27 @@ file output for a particular service but no HAProxy config. (default is ``False`
 * `backend_order`: optional: how backends should be ordered in the `backend` stanza. (default is shuffling). Setting to `asc` means sorting backends in ascending alphabetical order before generating stanza. `desc` means descending alphabetical order. `no_shuffle` means no shuffling or sorting.
 * `shared_frontend`: optional: haproxy configuration directives for a shared http frontend (see below)
 * `cookie_value_method`: optional: default value is `name`, it defines the way your backends receive a cookie value in http mode. If equal to `hash`, synapse hashes backend names on cookie value assignation of your discovered backends, useful when you want to use haproxy cookie feature but you do not want that your end users receive a Set-Cookie with your server name and ip readable in clear.
+
+<a name="nginxsvc"/>
+#### The `nginx` Section ####
+
+This section is its own hash, which can contain the following keys:
+
+* `disabled`: A boolean value indicating if nginx configuration management
+for just this service instance ought be disabled. For example, if you want
+haproxy output for a particular service but not nginx config. (default: `false`)
+* `mode`: The type of proxy, either `http` or `tcp`. This impacts whether
+nginx generates a stream or an http backend for this service. (default: `http`)
+* `upstream`: A list of configuration lines to add to the `upstream` section of
+nginx. (default: [])
+* `server`: A list of configuration lines to add to the `server` section of
+nginx. (default: [])
+* `listen_address`: force nginx to listen on this address (default is localhost).
+Setting `listen_address` on a per service basis overrides the global `listen_address`
+in the top level `nginx` config hash.
+* `upstream_order`: how servers should be ordered in the `upstream` stanza. Setting to `asc` means sorting backends in ascending alphabetical order before generating stanza. `desc` means descending alphabetical order. `no_shuffle` means no shuffling or sorting. (default: `shuffle`, which results in random ordering of upstream servers)
+* `upstream_name`: The name of the generated nginx backend for this service
+  (defaults to the service's key in the `services` section)
 
 <a name="haproxy"/>
 ### Configuring HAProxy ###
@@ -324,6 +365,38 @@ The top level `haproxy` section of the config file has the following options:
 
 Note that a non-default `bind_address` can be dangerous.
 If you configure an `address:port` combination that is already in use on the system, haproxy will fail to start.
+
+<a name="nginx"/>
+### Configuring NGINX ###
+
+The top level `nginx` section of the config file. If provided, it must have
+a `contexts` top level key which contains a hash with the following two
+contexts defined:
+
+* `main`: A list of configuration lines to add to the top level of the nginx
+configuration. Typically this contains things like pid files or worker process countes.
+* `events`: A list of configuration lines to add to the events section of the
+nginx configuration. Typically this contians things like worker_connection counts.
+
+The following options may be provided to control how nginx writes config:
+* `do_writes`: whether or not the config file will be written (default to `true`)
+* `config_file_path`: where Synapse will write the nginx config file. Required if `do_writes` is set.
+* `check_command`: the command Synapse will run to ensure the generated NGINX config is valid before reloading.
+Required if `do_writes` is set.
+
+You can control reloading with:
+* `do_reloads`: whether or not Synapse will reload nginx automatically (default to `true`)
+* `reload_command`: the command Synapse will run to reload NGINX. Required if `do_reloads` is set.
+* `start_command`: the command Synapse will run to start NGINX the first time. Required if `do_reloads` is set.
+* `restart_interval`: number of seconds to wait between restarts of NGINX (default: 2)
+* `restart_jitter`: percentage, expressed as a float, of jitter to multiply the `restart_interval` by when determining the next
+  restart time. Use this to help prevent storms when HAProxy restarts. (default: 0.0)
+
+You can also provide:
+* `listen_address`: force NGINX to listen on this address (default: localhost)
+*
+Note that a non-default `listen_address` can be dangerous.
+If you configure an `address:port` combination that is already in use on the system, nginx will fail to start.
 
 <a name="file"/>
 ### Configuring `file_output` ###
@@ -428,6 +501,7 @@ Non-HTTP backends such as MySQL or RabbitMQ will obviously continue to need thei
 See the Service Watcher [README](lib/synapse/service_watcher/README.md) for
 how to add new Service Watchers.
 
+<a name="createconfig"/>
 ### Creating a Config Generator ###
 
 See the Config Generator [README](lib/synapse/config_generator/README.md) for
