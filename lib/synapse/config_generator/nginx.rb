@@ -55,6 +55,7 @@ class Synapse::ConfigGenerator
       unless service_watcher_opts.include?('port')
         log.warn "synapse: service #{service_watcher_name}: nginx config does not include a port; only upstream sections for the service will be created; you must move traffic there manually using server sections"
       end
+      service_watcher_opts['disabled'] |= false
     end
 
 
@@ -140,16 +141,16 @@ class Synapse::ConfigGenerator
         port = watcher_config['port']
       end
 
-      bind_address = (
-        watcher_config['bind_address'] ||
-        @opts['bind_address'] ||
+      listen_address = (
+        watcher_config['listen_address'] ||
+        @opts['listen_address'] ||
         'localhost'
       )
       upstream_name = watcher_config.fetch('upstream_name', watcher.name)
 
       stanza = [
         "\tserver {",
-        "\t\tlisten #{bind_address}:#{port};",
+        "\t\tlisten #{listen_address}:#{port};",
         watcher_config['server'].map {|c| "\t\t#{c};"},
         generate_proxy(watcher_config['mode'], upstream_name),
         "\t}",
@@ -187,7 +188,7 @@ class Synapse::ConfigGenerator
       # nginx doesn't like upstreams with no backends?
       return [] if backends.empty?
 
-      keys = case watcher_config['backend_order']
+      keys = case watcher_config['upstream_order']
       when 'asc'
         backends.keys.sort
       when 'desc'
