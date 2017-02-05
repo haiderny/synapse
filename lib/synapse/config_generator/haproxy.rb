@@ -845,6 +845,7 @@ class Synapse::ConfigGenerator
         'backend' => [],
         'frontend' => [],
         'listen' => [],
+        'disabled' => false,
       }
       unless service_watcher_opts.include?('port')
         log.warn "synapse: service #{service_watcher_name}: haproxy config does not include a port; only backend sections for the service will be created; you must move traffic there manually using configuration in `extra_sections`"
