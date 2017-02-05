@@ -989,7 +989,7 @@ class Synapse::ConfigGenerator
       end
 
       bind_options = watcher_config['bind_options']
-      bind_options = bind_options.nil? ? '' : ' ' + bind_options
+      bind_options = bind_options.nil? ? '' : " #{bind_options}"
 
       bind_address = (
         watcher_config['bind_address'] ||
@@ -998,10 +998,13 @@ class Synapse::ConfigGenerator
       )
       backend_name = watcher_config.fetch('backend_name', watcher.name)
 
+      # Explicit null value passed indicating no port needed
+      bind_port = port.nil? ? '' : ":#{port}"
+
       stanza = [
         "\nfrontend #{watcher.name}",
         config.map {|c| "\t#{c}"},
-        "\tbind #{bind_address}:#{port}#{bind_options}",
+        "\tbind #{bind_address}#{bind_port}#{bind_options}",
         "\tdefault_backend #{backend_name}"
       ]
     end
