@@ -124,7 +124,7 @@ export GEM_PATH=/opt/smartstack/synapse
 /opt/smartstack/synapse/bin/synapse --help
 ```
 
-Don't forget to install HAProxy too.
+Don't forget to install HAProxy or NGINX too.
 
 ## Configuration ##
 
@@ -133,6 +133,7 @@ The file has three main sections.
 
 1. [`services`](#services): lists the services you'd like to connect.
 2. [`haproxy`](#haproxy): specifies how to configure and interact with HAProxy.
+2. [`nginx`](#nginx): specifies how to configure and interact with NGINX.
 3. [`file_output`](#file) (optional): specifies where to write service state to on the filesystem.
 
 <a name="services"/>
