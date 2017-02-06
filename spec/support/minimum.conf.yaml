@@ -25,10 +25,21 @@ haproxy:
   do_socket: false
   global:
     - global_test_option
-
   defaults:
     - default_test_option
 
+# settings for nginx
+nginx:
+  contexts:
+    main: [
+      'worker_processes 1',
+      'pid /tmp/nginx.pid'
+    ]
+    events: [
+      'worker_connections 1024'
+    ]
+  do_writes: false
+  do_reloads: false
 
 # settings for the file output generator
 file_output:
