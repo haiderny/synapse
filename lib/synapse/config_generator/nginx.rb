@@ -21,15 +21,16 @@ class Synapse::ConfigGenerator
       @opts['do_reloads'] = true unless @opts.key?('do_reloads')
 
       req_pairs = {
-        'do_writes' => 'config_file_path',
-        'do_writes' => 'check_command',
-        'do_reloads' => 'reload_command',
-        'do_reloads' => 'start_command',
+        'do_writes' => ['config_file_path', 'check_command'],
+        'do_reloads' => ['reload_command', 'start_command'],
       }
 
-      req_pairs.each do |cond, req|
+      req_pairs.each do |cond, reqs|
         if opts[cond]
-          raise ArgumentError, "the `#{req}` option is required when `#{cond}` is true" unless opts[req]
+          unless reqs.all? {|req| opts[req]}
+            missing = reqs.select {|req| not opts[req]}
+            raise ArgumentError, "the `#{missing}` option(s) are required when `#{cond}` is true"
+          end
         end
       end
 
@@ -85,6 +86,8 @@ class Synapse::ConfigGenerator
       http, stream = [], []
       watchers.each do |watcher|
         watcher_config = watcher.generator_config['nginx']
+        next if watcher_config['disabled']
+
         section = case watcher_config['mode']
           when 'http'
             http
@@ -97,9 +100,11 @@ class Synapse::ConfigGenerator
         section << generate_upstream(watcher).flatten
       end
 
-      new_config << 'http {'
-      new_config.concat(http.flatten)
-      new_config << "}\n"
+      unless http.empty?
+        new_config << 'http {'
+        new_config.concat(http.flatten)
+        new_config << "}\n"
+      end
 
       unless stream.empty?
         new_config << 'stream {'
