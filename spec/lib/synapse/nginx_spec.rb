@@ -11,8 +11,7 @@ describe Synapse::ConfigGenerator::Nginx do
     allow(mockWatcher).to receive(:name).and_return('example_service')
     backends = [{ 'host' => 'somehost', 'port' => 5555}]
     allow(mockWatcher).to receive(:backends).and_return(backends)
-    watcher_config = {'port' => 2199}
-    subject.normalize_config_generator_opts!('example_service', watcher_config)
+    watcher_config = subject.normalize_watcher_provided_opts('example_service', {'port' => 2199})
     allow(mockWatcher).to receive(:generator_config).and_return({
       'nginx' => watcher_config
     })
@@ -24,8 +23,7 @@ describe Synapse::ConfigGenerator::Nginx do
     allow(mockWatcher).to receive(:name).and_return('disabled_watcher')
     backends = [{ 'host' => 'somehost', 'port' => 5555}]
     allow(mockWatcher).to receive(:backends).and_return(backends)
-    watcher_config = {'port' => 2199, 'disabled' => true}
-    subject.normalize_config_generator_opts!('disabled_watcher', watcher_config)
+    watcher_config = subject.normalize_watcher_provided_opts('disabled_watcher', {'port' => 2199, 'disabled' => true})
     allow(mockWatcher).to receive(:generator_config).and_return({
       'nginx' => watcher_config
     })
