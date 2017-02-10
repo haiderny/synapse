@@ -48,15 +48,18 @@ class Synapse::ConfigGenerator
       @watcher_configs = {}
     end
 
-    def normalize_config_generator_opts!(service_watcher_name, service_watcher_opts)
-      service_watcher_opts['mode'] ||= 'http'
-      %w{upstream server}.each do |sec|
-        service_watcher_opts[sec] ||= []
-      end
+    def normalize_watcher_provided_opts(service_watcher_name, service_watcher_opts)
+      service_watcher_opts = super(service_watcher_name, service_watcher_opts)
+      defaults = {
+        'mode' => 'http',
+        'upstream' => [],
+        'server' => [],
+        'disabled' => false,
+      }
       unless service_watcher_opts.include?('port')
         log.warn "synapse: service #{service_watcher_name}: nginx config does not include a port; only upstream sections for the service will be created; you must move traffic there manually using server sections"
       end
-      service_watcher_opts['disabled'] |= false
+      defaults.merge(service_watcher_opts)
     end
 
 
@@ -65,7 +68,7 @@ class Synapse::ConfigGenerator
 
       # We potentially have to restart if the restart was rate limited
       # in the original call to update_config
-      restart if @opts['do_reloads'] && @restart_required
+      restart if opts['do_reloads'] && @restart_required
     end
 
     def update_config(watchers)
@@ -73,9 +76,9 @@ class Synapse::ConfigGenerator
       new_config = generate_config(watchers)
 
       # if we write config files, lets do that and then possibly restart
-      if @opts['do_writes']
+      if opts['do_writes']
         @restart_required = write_config(new_config)
-        restart if @opts['do_reloads'] && @restart_required
+        restart if opts['do_reloads'] && @restart_required
       end
     end
 
@@ -148,7 +151,7 @@ class Synapse::ConfigGenerator
 
       listen_address = (
         watcher_config['listen_address'] ||
-        @opts['listen_address'] ||
+        opts['listen_address'] ||
         'localhost'
       )
       upstream_name = watcher_config.fetch('upstream_name', watcher.name)
@@ -220,19 +223,19 @@ class Synapse::ConfigGenerator
     # writes the config
     def write_config(new_config)
       begin
-        old_config = File.read(@opts['config_file_path'])
+        old_config = File.read(opts['config_file_path'])
       rescue Errno::ENOENT => e
-        log.info "synapse: could not open nginx config file at #{@opts['config_file_path']}"
+        log.info "synapse: could not open nginx config file at #{opts['config_file_path']}"
         old_config = ""
       end
 
       if old_config == new_config
         return false
       else
-        File.open(@opts['config_file_path'],'w') {|f| f.write(new_config)}
-        check = `#{@opts['check_command']}`.chomp
+        File.open(opts['config_file_path'],'w') {|f| f.write(new_config)}
+        check = `#{opts['check_command']}`.chomp
         unless $?.success?
-          log.error "synapse: nginx configuration is invalid according to #{@opts['check_command']}!"
+          log.error "synapse: nginx configuration is invalid according to #{opts['check_command']}!"
           log.error 'synapse: not restarting nginx as a result'
           return false
         end
@@ -253,15 +256,15 @@ class Synapse::ConfigGenerator
 
       # do the actual restart
       unless @has_started
-        log.info "synapse: attempting to run #{@opts['start_command']} to get nginx started"
+        log.info "synapse: attempting to run #{opts['start_command']} to get nginx started"
         log.info 'synapse: this can fail if nginx is already running'
-        res = `#{@opts['start_command']}`.chomp
+        res = `#{opts['start_command']}`.chomp
         @has_started = true
       end
 
-      res = `#{@opts['reload_command']}`.chomp
+      res = `#{opts['reload_command']}`.chomp
       unless $?.success?
-        log.error "failed to reload nginx via #{@opts['reload_command']}: #{res}"
+        log.error "failed to reload nginx via #{opts['reload_command']}: #{res}"
         return
       end
       log.info "synapse: restarted nginx"
